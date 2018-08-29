@@ -2,6 +2,8 @@ import time
 import pickle
 import asyncio
 import warnings
+from hashlib import blake2s
+from itertools import chain
 
 import aiohttp.web
 
@@ -32,12 +34,28 @@ class BaseCache(object):
         raise NotImplementedError()
     
     async def make_key(self, request: aiohttp.web.Request) -> str:
-        key = "{method}#{host}#{path}#{postdata}#{ctype}".format(method=request.method,
-                                                                 path=request.rel_url.path_qs,
-                                                                 host=request.url.host,
-                                                                 postdata="".join(await request.post()),
-                                                                 ctype=request.content_type)
-        
+        data = None
+        vars = []
+        hash = ''
+        query = request.query.items()
+        if query:
+            vars = sorted(query)
+        if request.content_type == 'application/json':
+            data = await request.json()
+        elif request.body_exists:
+            data = await request.post()
+        # TODO: what to do with arbitrary payload?
+        # if not data:
+        #     data = request.read()
+        if data:
+            vars += sorted(data.items())
+        if vars:
+            hash = blake2s(''.join(map(str, chain(vars))).encode()).hexdigest()
+        key = "{method}#{host}#{path}#{ctype}#{hash}".format(method=request.method,
+                                                             path=request.rel_url.path_qs,
+                                                             host=request.url.host,
+                                                             ctype=request.content_type,
+                                                             hash=hash)
         return key
     
     def _calculate_expires(self, expires: int) -> int:
