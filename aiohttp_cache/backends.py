@@ -84,9 +84,9 @@ class RedisCache(BaseCache):
         BaseCache.__init__(self, config.expiration)
         _loop = loop or asyncio.get_event_loop()
         
-        self._redis_pool = _loop.run_until_complete(aioredis.create_pool((config.host, config.port),
-                                                                         db=config.db,
-                                                                         password=config.password))
+        self._redis_pool = _loop.run_until_complete(aioredis.create_redis_pool((config.host, config.port),
+                                                                               db=config.db,
+                                                                               password=config.password))
         self.key_prefix = config.key_prefix
     
     def dump_object(self, value: dict) -> bytes:
@@ -113,7 +113,7 @@ class RedisCache(BaseCache):
             return value
     
     async def get(self, key: str):
-        async with self._redis_pool.get() as redis:
+        with await self._redis_pool as redis:
             redis_value = await redis.get(self.key_prefix + key)
             
             return self.load_object(redis_value)
@@ -124,25 +124,25 @@ class RedisCache(BaseCache):
         _expires = self._calculate_expires(expires)
         
         if _expires == 0:
-            async with self._redis_pool.get() as redis:
+            with await self._redis_pool as redis:
                 await redis.set(name=self.key_prefix + key,
                                 value=dump)
         else:
-            async with self._redis_pool.get() as redis:
+            with await self._redis_pool as redis:
                 await redis.setex(key=self.key_prefix + key,
                                   seconds=_expires,
                                   value=dump)
     
     async def delete(self, key: str):
-        async with self._redis_pool.get() as redis:
+        with await self._redis_pool as redis:
             await redis.delete(self.key_prefix + key)
     
     async def has(self, key: str) -> bool:
-        async with self._redis_pool.get() as redis:
+        with await self._redis_pool as redis:
             return await redis.exists(self.key_prefix + key)
     
     async def clear(self):
-        async with self._redis_pool.get() as redis:
+        with await self._redis_pool as redis:
             if self.key_prefix:
                 keys = await redis.keys(self.key_prefix + '*')
                 if keys:
